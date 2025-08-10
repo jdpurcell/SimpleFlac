@@ -76,7 +76,10 @@ public class FlacDecoder : IDisposable {
 
 	public void Dispose() {
 		_reader.Dispose();
-		_outputHasher?.Dispose();
+		if (_options.ValidateOutputHash) {
+			_outputHasherTask.Wait();
+			_outputHasher!.Dispose();
+		}
 	}
 
 	private void ValidateOptions() {
