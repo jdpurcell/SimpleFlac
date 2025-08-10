@@ -34,8 +34,8 @@ using System.Threading.Tasks;
 namespace SimpleFlac;
 
 public class FlacDecoder : IDisposable {
-	private readonly BitReader _reader;
 	private readonly Options _options;
+	private readonly BitReader _reader;
 	private readonly IncrementalHash? _outputHasher;
 	private Task _outputHasherTask = Task.CompletedTask;
 	private byte[] _expectedOutputHash = new byte[16];
@@ -56,9 +56,8 @@ public class FlacDecoder : IDisposable {
 	public int BlockAlign => BytesPerSample * ChannelCount;
 
 	public FlacDecoder(Stream input, Options? options = null) {
-		_reader = new BitReader(input);
 		_options = options ?? new Options();
-		_outputHasher = _options.ValidateOutputHash ? IncrementalHash.CreateHash(HashAlgorithmName.MD5) : null;
+		_reader = new BitReader(input);
 		try {
 			ValidateOptions();
 			ReadMetadata();
@@ -67,6 +66,7 @@ public class FlacDecoder : IDisposable {
 			_reader.Dispose();
 			throw;
 		}
+		_outputHasher = _options.ValidateOutputHash ? IncrementalHash.CreateHash(HashAlgorithmName.MD5) : null;
 	}
 
 	public FlacDecoder(string path, Options? options = null)
