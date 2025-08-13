@@ -34,11 +34,8 @@ public class WavWriter : IDisposable {
 
 	private void WriteHeaders() {
 		long dataSize = _sampleCount * _blockAlign;
-		if (dataSize % 2 != 0) {
-			_writePaddingByte = true;
-			dataSize++;
-		}
-		long fileSize = 44 + dataSize;
+		_writePaddingByte = dataSize % 2 != 0;
+		long fileSize = 44 + dataSize + (_writePaddingByte ? 1 : 0);
 		if (fileSize > UInt32.MaxValue)
 			throw new NotSupportedException("File size exceeds the maximum.");
 		_output.Write("RIFF"u8);
