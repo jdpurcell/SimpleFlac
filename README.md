@@ -11,8 +11,7 @@ A console demo is included, but the main purpose of this repository is to share 
 - Permissively licensed (MIT).
 
 ## Limitations
-- 8 bits per sample is not supported.
-- Bit depths that are not a multiple of 8 (e.g. 20 bits per sample) are not supported.
+- Support for non-whole-byte bit depths (e.g. 20 bits per sample) and 8 bits per sample is disabled by default. You can enable it with the `AllowNonstandardByteOutput` option, but note that in these cases the byte output is incompatible with the byte format used in PCM WAV files.
 
 ## Usage
 

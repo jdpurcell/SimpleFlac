@@ -44,6 +44,7 @@ public class FlacDecoder : IDisposable {
 	public int SampleRate { get; private set; }
 	public int ChannelCount { get; private set; }
 	public int BitsPerSample { get; private set; }
+	public int BytesPerSample { get; private set; }
 	public int MaxSamplesPerFrame { get; private set; }
 
 	public long[][] BufferSamples { get; private set; } = [[]];
@@ -52,7 +53,6 @@ public class FlacDecoder : IDisposable {
 	public int BufferByteCount { get; private set; }
 	public long RunningSampleCount { get; private set; }
 
-	public int BytesPerSample => BitsPerSample / 8;
 	public int BlockAlign => BytesPerSample * ChannelCount;
 
 	public FlacDecoder(Stream input, Options? options = null) {
@@ -125,10 +125,8 @@ public class FlacDecoder : IDisposable {
 			_expectedOutputHash[i] = (byte)_reader.Read(8);
 		}
 
-		if (BitsPerSample % 8 != 0)
-			throw new NotSupportedException("Unsupported bit depth.");
-
 		StreamSampleCount = streamSampleCount != 0 ? streamSampleCount : null;
+		BytesPerSample = (BitsPerSample + 7) / 8;
 		BufferSamples = new long[ChannelCount][];
 		for (int ch = 0; ch < ChannelCount; ch++) {
 			BufferSamples[ch] = new long[MaxSamplesPerFrame];
@@ -220,7 +218,7 @@ public class FlacDecoder : IDisposable {
 
 		if (_options.ConvertOutputToBytes) {
 			_outputHasherTask.Wait();
-			ConvertOutputToBytes(BitsPerSample, ChannelCount, BufferSamples, BufferSampleCount, BufferBytes);
+			ConvertOutputToBytes(BitsPerSample, ChannelCount, BufferSamples, BufferSampleCount, BufferBytes, _options.AllowNonstandardByteOutput);
 			BufferByteCount = BufferSampleCount * BlockAlign;
 		}
 
@@ -403,20 +401,33 @@ public class FlacDecoder : IDisposable {
 		return (int)(v >> 1) ^ -(int)(v & 1);
 	}
 
-	private static void ConvertOutputToBytes(int bitsPerSample, int channelCount, long[][] samples, int sampleCount, byte[] bytes) {
-		int bytesPerSample = bitsPerSample / 8;
+	private static void ConvertOutputToBytes(int bitsPerSample, int channelCount, long[][] samples, int sampleCount, byte[] bytes, bool allowNonstandard) {
+		if (!allowNonstandard && (bitsPerSample % 8 != 0 || bitsPerSample == 8)) {
+			// Not allowed by default because the output produced here, which targets the byte format
+			// specified by FLAC to calculate its MD5 signature, differs from the byte format used in
+			// PCM WAV files. For non-whole-byte bit depths, WAV expects the samples to be shifted such
+			// that the padding is in the LSBs, and for 8-bit, WAV expects the samples to be unsigned.
+			throw new NotSupportedException("Unsupported bit depth.");
+		}
+		int bytesPerSample = (bitsPerSample + 7) / 8;
 		int blockAlign = bytesPerSample * channelCount;
 		for (int ch = 0; ch < channelCount; ch++) {
 			long[] src = samples[ch];
 			int offset = ch * bytesPerSample;
-			if (bitsPerSample == 16) {
+			if (bytesPerSample == 1) {
+				for (int i = 0; i < sampleCount; i++) {
+					bytes[offset] = (byte)src[i];
+					offset += blockAlign;
+				}
+			}
+			else if (bytesPerSample == 2) {
 				Span<byte> byteSpan = bytes.AsSpan();
 				for (int i = 0; i < sampleCount; i++) {
 					BinaryPrimitives.WriteInt16LittleEndian(byteSpan.Slice(offset, 2), (short)src[i]);
 					offset += blockAlign;
 				}
 			}
-			else if (bitsPerSample == 24) {
+			else if (bytesPerSample == 3) {
 				for (int i = 0; i < sampleCount; i++) {
 					long s = src[i];
 					bytes[offset    ] = (byte)s;
@@ -425,7 +436,7 @@ public class FlacDecoder : IDisposable {
 					offset += blockAlign;
 				}
 			}
-			else if (bitsPerSample == 32) {
+			else if (bytesPerSample == 4) {
 				Span<byte> byteSpan = bytes.AsSpan();
 				for (int i = 0; i < sampleCount; i++) {
 					BinaryPrimitives.WriteInt32LittleEndian(byteSpan.Slice(offset, 4), (int)src[i]);
@@ -433,9 +444,6 @@ public class FlacDecoder : IDisposable {
 				}
 			}
 			else {
-				// 8-bit is intentionally not supported because MD5 hash validation expects
-				// signed data whereas a consumer of this class would probably want unsigned
-				// data (e.g. to output to a WAV file).
 				throw new NotSupportedException("Unsupported bit depth.");
 			}
 		}
@@ -528,5 +536,6 @@ public class FlacDecoder : IDisposable {
 	public class Options {
 		public bool ConvertOutputToBytes { get; set; } = true;
 		public bool ValidateOutputHash { get; set; } = true;
+		public bool AllowNonstandardByteOutput { get; set; } = false;
 	}
 }
